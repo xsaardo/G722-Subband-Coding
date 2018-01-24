@@ -1,5 +1,29 @@
-%%
+function rL = lowBandADPCMDecoder(IL,step,mode)
+
+%% Constants
+load('lowerBandADPCMTable.mat');
 N = length(IL);
+beta = 127/128;
+delta_min = step/2;
+
+QL6 = lowerBandADPCMTable.QL6;
+QL5 = lowerBandADPCMTable.QL5;
+QL4 = lowerBandADPCMTable.QL4;
+WL = lowerBandADPCMTable.WL;
+pos_code = lowerBandADPCMTable.PositiveCodes;
+neg_code = lowerBandADPCMTable.NegativeCodes;
+
+%% Convert codeword to table index
+mL = zeros(length(IL),1);
+for i = 1:length(IL)
+    [a,~] = find(pos_code == IL(i));
+    [b,~] = find(neg_code == IL(i));
+    if (isempty(a))
+        mL(i) = b;
+    else
+        mL(i) = a;
+    end
+end
 
 %% initializations
 delta_L = ones(N,1);
@@ -18,8 +42,8 @@ rL = zeros(N,1);
 %%
 for n = 7:length(IL)
     n
-     %% quantizer adaptation
-    div_L(n) = div_L(n - 1)*beta + WL(code(n-1));
+    %% quantizer adaptation
+    div_L(n) = div_L(n - 1)*beta + WL(mL(n-1));
     
     if (div_L(n) < 0)
         div_L(n) = 0;
@@ -32,15 +56,28 @@ for n = 7:length(IL)
     delta_L(n) = 2^(div_L(n)+2)*delta_min;
     
     %% 60 and 15 level inverse adaptive quantizer
-    
     if((IL(n) >= 4 && IL(n) <= 31) || (IL(n) == 62) || (IL(n) == 63))
-        dL(n) = -QL6(code(n))*delta_L(n);
-        dLt(n) = -QL4(code(n))*delta_L(n);
+        dLt(n) = -QL4(mL(n))*delta_L(n);
+        % Mode selection
+        if (mode == 1)
+            dL(n) = -QL6(mL(n))*delta_L(n);
+        elseif (mode == 2)
+            dL(n) = -QL5(mL(n))*delta_L(n);
+        else
+            dL(n) = -QL4(mL(n))*delta_L(n);
+        end
     else
-        dL(n) = QL6(code(n))*delta_L(n);
-        dLt(n) = QL4(code(n))*delta_L(n);
+        dLt(n) = QL4(mL(n))*delta_L(n);
+        % Mode selection
+        if (mode == 1)
+            dL(n) = QL6(mL(n))*delta_L(n);
+        elseif (mode == 2)
+            dL(n) = QL5(mL(n))*delta_L(n);
+        else
+            dL(n) = QL4(mL(n))*delta_L(n);
+        end
     end
-      
+    
     %%
     sLp = aL1(n-1)*rLt(n-1) + aL2(n-1)*rLt(n-2);
     
@@ -48,7 +85,7 @@ for n = 7:length(IL)
         + bL4(n-1)*dLt(n-4) + bL5(n-1)*dLt(n-5) + bL6(n-1)*dLt(n-6);
     
     sL(n) = sLp + sLz(n);
- 
+    
     %% adaptive prediction
     rLt(n) = sL(n) + dLt(n);
     
@@ -58,7 +95,7 @@ for n = 7:length(IL)
         f=4*(aL1(n-1));
     else f=2*sgn2(aL1(n-1));
     end
-       
+    
     pA = sgn2(pLt(n))*sgn2(pLt(n-1));
     pB = sgn2(pLt(n))*sgn2(pLt(n-2));
     
@@ -84,16 +121,7 @@ for n = 7:length(IL)
     bL5(n) = (1-2^(-8))*bL5(n-1) + 2^(-7)*sign(dLt(n))*sgn2(dLt(n-5));
     bL6(n) = (1-2^(-8))*bL6(n-1) + 2^(-7)*sign(dLt(n))*sgn2(dLt(n-6));
     
-    %% 
+    %%
     rL(n) = dL(n) + sL(n);
     
 end
-
-%%
-recons = conv(upsample(rL,2),h0);
-
-figure;
-subplot(2,1,1);
-plot(x);
-subplot(2,1,2);
-plot(recons);
